@@ -41,6 +41,39 @@ def get_flags(flags):
     second = int(RA+Z+RCODE).to_bytes(1, byteorder='big')
     return first+second
 
+def get_question_domain(data):
+    state = 0 
+    expected_length = 0
+    domain_string = ''
+    domain_parts = []
+    x = 0
+    y = 0
+    
+    for byte in data:
+        if state == 1:
+            domain_string += chr(byte)
+            x += 1
+            
+            if x == expected_length:
+                domain_parts.append(domain_string)
+                domain_string = ''
+                state = 0
+                x = 0 
+            if byte == 0:
+                domain_parts.append(domain_string)
+                break
+            
+        else:
+            state = 1
+            expected_length = byte
+        
+        x += 1
+        y += 1
+        
+    question_type = data[y+1: y+3]
+
+    return (domain_parts, question_type)
+
 
 def build_response(data):
     
@@ -54,7 +87,11 @@ def build_response(data):
     # get the flags
     Flags = get_flags(data[2:4])    
     
-    print(Flags)  
+    # question count where we only support 1 question
+    QDCOUNT = b'\x00\x01'
+    
+    # answer count
+    get_question_domain(data[12:])
 
 # inifite loop listener
 while True:

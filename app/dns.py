@@ -113,6 +113,48 @@ def get_recs(data):
     # return relevant records
     return (zone[qt], qt, domain)
 
+def build_question(domain_name, rec_type):
+    # convert parameters to bytes
+    qbytes = b''
+    
+    for part in domain_name:
+        length = len(part)
+        qbytes += bytes([length])
+        
+        # show chars with the length preceding it
+        for char in part:
+            qbyts += ord(char).to_bytes(1, byteorder='big')
+
+    # record type            
+    if rec_type == 'a':
+        qbytes += (1).to_bytes(2, byteorder='big')
+        
+    # to represent the internet class
+    qbytes += (1).to_bytes(2, byteorder='big')
+    return qbytes
+
+def rec_to_bytes(domain_name, rec_type, recttl, recval):
+    # doing simple compression
+    rbytes = b'\xc0\x0c'
+    
+    if rec_type == 'a':
+        rbytes = rbytes + bytes([0]) + bytes([1])
+        
+    rbytes = rbytes + bytes([0]) + bytes([1])
+    
+    #store ttl
+    rbytes += int(recttl).to_bytes(4, byteorder='big')
+    
+    if rec_type == "a":
+        rbytes = rbytes + bytes([0]) + bytes([4])
+        
+        for part in recval.split('.'):
+            rbytes += bytes([int(part)])
+            
+    return rbytes
+    
+
+
 def build_response(data):
     
     # getting transaction id
@@ -134,8 +176,17 @@ def build_response(data):
     
     dns_header = TransactionID+Flags+QDCOUNT+ANCOUNT+NSCOUNT+ARCOUNT
     
-    return dns_header
+    dns_body = b''
     
+    # start on 12th byte since dns record is 12 bytes long
+    records, rec_type, domain_name = get_recs(data[12:])
+    
+    dns_question = build_question(domain_name, rec_type)
+    
+    for record in records:
+        dns_body += rec_to_bytes(domain_name, rec_type, record['ttl'], record['value'])
+    
+    return dns_header + dns_question + dns_body
     
 # inifite loop listener
 while True:

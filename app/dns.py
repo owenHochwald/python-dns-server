@@ -1,5 +1,6 @@
 import socket
-
+import glob
+import json
 # since dns default operates on port 53
 port = 53
 
@@ -9,6 +10,24 @@ ip = "127.0.0.1"
 # using IPV_4 and UDP instead of TCP
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((ip, port))
+
+
+
+def load_zones():
+    
+    json_zone = {}
+    zone_files = glob.glob('zones/*.zone')
+    
+    # loading into our program
+    for zone in zone_files:
+        with open(zone) as zone_data:
+            data = json.load(zone_data)
+            zone_name = data["$origin"]
+            json_zone[zone_name] = data
+    
+    
+zone_data = load_zones()
+
 
 def get_flags(flags):
     byte1 = bytes(flags[:1])
@@ -51,7 +70,8 @@ def get_question_domain(data):
     
     for byte in data:
         if state == 1:
-            domain_string += chr(byte)
+            if byte != 0:
+                domain_string += chr(byte)
             x += 1
             
             if x == expected_length:
@@ -67,22 +87,36 @@ def get_question_domain(data):
             state = 1
             expected_length = byte
         
-        x += 1
         y += 1
         
-    question_type = data[y+1: y+3]
+    question_type = data[y: y+2]
 
     return (domain_parts, question_type)
 
+
+def get_zone(domain):
+    global zone_data
+    
+    # joining the lists
+    zone_name = '.'.join(domain) + "."
+    return zone_data[zone_name]
+    
+
+def get_recs(data):
+    domain, question_type = get_question_domain(data)
+    qt = ''
+    if question_type == b'\x00\x01':
+        qt = 'a'
+    
+    zone = get_zone(domain)
+    
+    # return relevant records
+    return (zone[qt], qt, domain)
 
 def build_response(data):
     
     # getting transaction id
     TransactionID = data[:2]
-    TID = ''
-    for byte in TransactionID:
-        TID += hex(byte)[2:]  
-    
         
     # get the flags
     Flags = get_flags(data[2:4])    
@@ -91,8 +125,18 @@ def build_response(data):
     QDCOUNT = b'\x00\x01'
     
     # answer count
-    get_question_domain(data[12:])
+    ANCOUNT = len(get_recs(data[12:])[0]).to_bytes(2, byteorder='big')
 
+    # namserver count
+    NSCOUNT = (0).to_bytes(2, byte='big')
+    # additional section count
+    ARCOUNT = (0).to_bytes(2, byte='big')
+    
+    dns_header = TransactionID+Flags+QDCOUNT+ANCOUNT+NSCOUNT+ARCOUNT
+    
+    return dns_header
+    
+    
 # inifite loop listener
 while True:
     # receive info with a byte limit
